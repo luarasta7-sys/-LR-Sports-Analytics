@@ -182,48 +182,57 @@ def normalized_name(name):
  import unicodedata,re
  name=unicodedata.normalize('NFKD',name).encode('ascii','ignore').decode().casefold()
  return ' '.join(re.findall(r'[a-z0-9]+',name))
+# Only verified prices from the three user-selected bookmakers are eligible.
+BOOKMAKER_ALIASES={'betplay':'BetPlay','wplay':'Wplay','betano':'Betano'}
+def selected_bookmaker(book):
+ key=normalized_name(str(book.get('key','')))
+ title=normalized_name(str(book.get('title','')))
+ for alias,label in BOOKMAKER_ALIASES.items():
+  if key==alias or title==alias:return label
+ return None
+
 def attach_odds(result,sport,now,end):
  key=os.environ.get('THE_ODDS_API_KEY','').strip()
+ result['odds_status']='Sin cuotas verificadas de BetPlay, Wplay o Betano'
  if not key:
-  result['odds_status']='No configurado: falta THE_ODDS_API_KEY'
+  result['odds_status']='Sin proveedor autorizado conectado para consultar BetPlay, Wplay y Betano'
   return
- result['odds_status']='No se encontraron cuotas verificables para los partidos mostrados'
  matched=0
  for league in ODDS_SPORTS[sport]:
-  url='https://api.the-odds-api.com/v4/sports/'+league+'/odds/?'+urllib.parse.urlencode({'apiKey':key,'regions':'eu,uk,us','markets':'h2h','oddsFormat':'decimal'})
+  url='https://api.the-odds-api.com/v4/sports/'+league+'/odds/?'+urllib.parse.urlencode({'apiKey':key,'regions':'eu,uk,us,au','markets':'h2h','oddsFormat':'decimal'})
   try:
    events=get(url)
    if not isinstance(events,list):continue
    for game in result['games']:
-    if game.get('odds'):continue
     for event in events:
      try:dt=datetime.datetime.fromisoformat(event['commence_time'].replace('Z','+00:00'))
      except (KeyError,ValueError,TypeError):continue
      if not now<dt<=end or abs((dt-datetime.datetime.fromisoformat(game['date'])).total_seconds())>7200:continue
-     home=normalized_name(game['home']);away=normalized_name(game['away'])
-     eh=normalized_name(event.get('home_team',''));ea=normalized_name(event.get('away_team',''))
-     if not (home==eh and away==ea):continue
+     if normalized_name(game['home'])!=normalized_name(event.get('home_team','')) or normalized_name(game['away'])!=normalized_name(event.get('away_team','')):continue
      for pick in game['predictions']:
       market=pick['market']
       if market not in ('Ganador local','Ganador visitante','1','X','2'):continue
       target=event.get('home_team') if market in ('Ganador local','1') else event.get('away_team') if market in ('Ganador visitante','2') else 'Draw'
-      quotes=[]
+      quotes={}
       for book in event.get('bookmakers',[]):
+       bookmaker=selected_bookmaker(book)
+       if not bookmaker:continue
        for m in book.get('markets',[]):
         if m.get('key')!='h2h':continue
         for outcome in m.get('outcomes',[]):
          if normalized_name(outcome.get('name',''))==normalized_name(target):
           price=outcome.get('price')
-          if isinstance(price,(int,float)) and 1<price<1000:quotes.append(float(price))
+          if isinstance(price,(int,float)) and 1<float(price)<1000:quotes[bookmaker]=float(price)
       if quotes:
-       pick['average_odds']=round(statistics.mean(quotes),2)
+       pick['average_odds']=round(statistics.mean(quotes.values()),2)
        pick['bookmakers_count']=len(quotes)
-       pick['odds_source']='The Odds API'
+       pick['odds_by_bookmaker']=quotes
+       pick['odds_source']='BetPlay / Wplay / Betano (cotizaciones disponibles)'
        pick['odds_checked_at']=now.isoformat()
        matched+=1
   except Exception as exc:
    result['warnings'].append('Cuotas '+league+': '+type(exc).__name__)
- if matched:result['odds_status']='Cuotas verificadas en '+str(matched)+' selecciones (The Odds API)'
+ if matched:result['odds_status']='Cuotas de casas seleccionadas verificadas en '+str(matched)+' selecciones'
 
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
