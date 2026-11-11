@@ -113,7 +113,7 @@ def predictions(sport):
  return result
 
 def _compute_predictions(sport):
- now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=72)
+ now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=60)
  result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Sin proveedor de cuotas verificado','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
 
  # Fetch independent league calendars concurrently to keep the mobile request responsive.
@@ -182,6 +182,9 @@ def _compute_predictions(sport):
    if g not in chosen:chosen.append(g)
    if len(chosen)==5:break
  result['games']=sorted(chosen,key=lambda x:(-max(p['probability'] for p in x['predictions']),x['date']))
+ for g in result['games']:
+  g['analysis']=['Tendencia del modelo: '+g['predictions'][0]['market']+' ('+str(g['predictions'][0]['probability'])+' % estimado).','Estimación basada en los últimos '+str(g['sample'])+' partidos disponibles por equipo; contraste externo pendiente.']
+  g['free_sources']=[{'name':'Forebet','url':'https://www.forebet.com/en/football-predictions'} ,{'name':'FreeSuperTips','url':'https://www.freesupertips.com/predictions/'}] if sport=='soccer' else [{'name':'Forebet','url':'https://www.forebet.com/en/basketball-predictions'}]
  result['fixtures']=sorted({(g['league'],g['id']):g for g in result['fixtures']}.values(),key=lambda g:g['date'])[:5]
  attach_odds(result,sport,now,end)
  if not result['games']:
