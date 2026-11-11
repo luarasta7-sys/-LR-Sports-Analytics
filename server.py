@@ -111,12 +111,12 @@ def forebet_predictions():
   def handle_data(self,data):
    if self.depth:self.buf.append(data+' ')
  urls=['https://www.forebet.com/en/football-predictions/','https://www.forebet.com/en/football-predictions']
- rows=[]
+ rows=[];http_ok=False;page_size=0
  for url in urls:
   try:
    req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36','Accept-Language':'en-US,en;q=0.9'})
    with urllib.request.urlopen(req,timeout=12) as resp:page=resp.read(3000000).decode('utf-8','replace')
-   parser=Rows();parser.feed(page);rows.extend(parser.rows)
+   http_ok=True;page_size=len(page);parser=Rows();parser.feed(page);rows.extend(parser.rows)
    if rows:break
   except Exception as exc:result['warnings'].append('Forebet: '+type(exc).__name__)
  # Each result requires a match date, two team names and three Forebet percentages.
@@ -143,7 +143,8 @@ def forebet_predictions():
  result['games']=(preferred if preferred else result['games'])[:5]
  result['tier']='principal' if preferred else ('alternativo' if result['games'] else 'none')
  result['threshold']=69 if preferred else 50
- if not result['games']:result['note']='Forebet no entregó partidos futuros que el extractor pueda verificar. No se mostrarán datos inventados.'
+ if not result['games']:
+  result['note']=('No se pudo conectar con Forebet desde el servidor. '+', '.join(result['warnings'][:2]) if not http_ok else 'Forebet respondió, pero el lector no reconoció pronósticos con fecha, equipos y probabilidades. Filas detectadas: '+str(len(rows))+'. Página: '+str(page_size)+' caracteres. No se inventarán datos.')
  return result
 
 def poisson(lam,n):return math.exp(-lam)*lam**n/math.factorial(n)
