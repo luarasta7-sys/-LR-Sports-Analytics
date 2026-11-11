@@ -191,48 +191,49 @@ def selected_bookmaker(book):
   if key==alias or title==alias:return label
  return None
 
+def american_to_decimal(value):
+ try:
+  v=float(value)
+  if v==0:return None
+  return round(1+v/100,2) if v>0 else round(1+100/abs(v),2)
+ except (TypeError,ValueError):return None
+
 def attach_odds(result,sport,now,end):
- key=os.environ.get('THE_ODDS_API_KEY','').strip()
- result['odds_status']='Sin cuotas verificadas de BetPlay'
- if not key:
-  result['odds_status']='BetPlay: proveedor de cotizaciones no configurado'
-  return
- matched=0
- for league in ODDS_SPORTS[sport]:
-  url='https://api.the-odds-api.com/v4/sports/'+league+'/odds/?'+urllib.parse.urlencode({'apiKey':key,'regions':'eu,uk,us,au','markets':'h2h','oddsFormat':'decimal'})
+ # Public ESPN Core odds feed, no private API key. The quoted bookmaker is disclosed.
+ result['odds_status']='No se encontraron cotizaciones publicadas para estas selecciones'
+ found=0
+ for game in result['games']:
+  league=game.get('league','')
+  eid=str(game.get('id',''))
+  if not eid.isdigit() or league not in LEAGUES[sport]:continue
+  sport_path='soccer' if sport=='soccer' else 'basketball'
+  url='https://sports.core.api.espn.com/v2/sports/'+sport_path+'/leagues/'+urllib.parse.quote(league)+'/events/'+eid+'/competitions/'+eid+'/odds?limit=20'
   try:
-   events=get(url)
-   if not isinstance(events,list):continue
-   for game in result['games']:
-    for event in events:
-     try:dt=datetime.datetime.fromisoformat(event['commence_time'].replace('Z','+00:00'))
-     except (KeyError,ValueError,TypeError):continue
-     if not now<dt<=end or abs((dt-datetime.datetime.fromisoformat(game['date'])).total_seconds())>7200:continue
-     if normalized_name(game['home'])!=normalized_name(event.get('home_team','')) or normalized_name(game['away'])!=normalized_name(event.get('away_team','')):continue
-     for pick in game['predictions']:
-      market=pick['market']
-      if market not in ('Ganador local','Ganador visitante','1','X','2'):continue
-      target=event.get('home_team') if market in ('Ganador local','1') else event.get('away_team') if market in ('Ganador visitante','2') else 'Draw'
-      quotes={}
-      for book in event.get('bookmakers',[]):
-       bookmaker=selected_bookmaker(book)
-       if not bookmaker:continue
-       for m in book.get('markets',[]):
-        if m.get('key')!='h2h':continue
-        for outcome in m.get('outcomes',[]):
-         if normalized_name(outcome.get('name',''))==normalized_name(target):
-          price=outcome.get('price')
-          if isinstance(price,(int,float)) and 1<float(price)<1000:quotes[bookmaker]=float(price)
-      if quotes:
-       pick['average_odds']=round(quotes['BetPlay'],2)
-       pick['bookmakers_count']=len(quotes)
-       pick['odds_by_bookmaker']=quotes
-       pick['odds_source']='BetPlay'
-       pick['odds_checked_at']=now.isoformat()
-       matched+=1
-  except Exception as exc:
-   result['warnings'].append('Cuotas '+league+': '+type(exc).__name__)
- if matched:result['odds_status']='Cuotas BetPlay verificadas en '+str(matched)+' selecciones'
+   data=get(url)
+   entries=data.get('items',[])
+   for entry in entries:
+    if '$ref' in entry:
+     try:entry=get(entry['$ref'])
+     except Exception:continue
+    provider=(entry.get('provider') or {}).get('name') or 'Casa no identificada'
+    for pick in game['predictions']:
+     market=pick['market'];field=None
+     if market in ('1','Ganador local'):field='homeTeamOdds'
+     elif market in ('2','Ganador visitante'):field='awayTeamOdds'
+     elif market=='X':field='drawOdds'
+     if not field:continue
+     val=entry.get(field)
+     if isinstance(val,dict):val=val.get('moneyLine')
+     decimal=american_to_decimal(val)
+     if decimal and 1<decimal<1000:
+      pick['average_odds']=decimal
+      pick['bookmakers_count']=1
+      pick['odds_source']=provider+' (vía ESPN Core)'
+      pick['odds_checked_at']=now.isoformat()
+      found+=1
+    if any(p.get('average_odds') for p in game['predictions']):break
+  except Exception as exc:result['warnings'].append('Cuotas '+league+': '+type(exc).__name__)
+ if found:result['odds_status']='Cuotas de casas identificadas: '+str(found)+' selecciones'
 
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
