@@ -116,39 +116,40 @@ def _compute_predictions(sport):
  now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=72)
  result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Sin proveedor de cuotas verificado','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
 
- for league in LEAGUES[sport]:
+ # Fetch independent league calendars concurrently to keep the mobile request responsive.
+ def league_results(league):
   path=('soccer/'+league) if sport=='soccer' else ('basketball/'+league if league in ('nba','wnba') else league)
   base='https://site.api.espn.com/apis/site/v2/sports/'+path+'/scoreboard?dates='
-  try:
-   # ESPN scoreboard accepts single-day YYYYMMDD queries reliably; avoid date ranges returning HTTP 400.
-   history=[];future=[];success=0
-   for days in (1,2,3,5,7,14,30):
-    day=now-datetime.timedelta(days=days)
-    try:
-     history.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')));success+=1
-    except Exception as err:
-     result['warnings'].append(league+' historial '+str(days)+': '+type(err).__name__+' '+str(err)[:70])
-   for days in (0,1,2,3):
-    day=now+datetime.timedelta(days=days)
-    try:
-     future.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')));success+=1
-    except Exception as err:
-     result['warnings'].append(league+' calendario '+str(days)+': '+type(err).__name__+' '+str(err)[:70])
-   if not success:raise RuntimeError('No respondió ninguna consulta diaria de ESPN')
-   result['sources'].append('ESPN '+league)
-  except Exception as exc:
-   result['warnings'].append(league+': '+type(exc).__name__+' '+str(exc)[:120]);continue
+  queries=[('history',n) for n in (1,2,3,5,7,14,30)]+[('future',n) for n in (0,1,2,3)]
+  def one(q):
+   kind,days=q
+   day=now+datetime.timedelta(days=days if kind=='future' else -days)
+   try:return kind,parse(get(base+day.strftime('%Y%m%d')+'&limit=200'))
+   except Exception:return kind,[]
+  with concurrent.futures.ThreadPoolExecutor(max_workers=11) as pool:
+   fetched=list(pool.map(one,queries))
+  history=[e for kind,events in fetched if kind=='history' for e in events]
+  future=[e for kind,events in fetched if kind=='future' for e in events]
+  if not history and not future:return [],[],False
   team=defaultdict(list)
-  for e in sorted(history,key=lambda e:e['dt']):
+  for e in sorted({(e['id'],e['dt']):e for e in history}.values(),key=lambda e:e['dt']):
    if not e['done'] or e['hs'] is None or e['dt']>=now:continue
    team[e['hid']].append((e['hs'],e['ass']));team[e['aid']].append((e['ass'],e['hs']))
+  games=[];fixtures=[]
   for e in future:
    if not e['scheduled'] or not now<e['dt']<=end:continue
-   result['fixtures'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league})
+   fixtures.append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league})
    h=team[e['hid']][-10:];a=team[e['aid']][-10:]
-   if min(len(h),len(a))<5:continue
+   if min(len(h),len(a))<3:continue
    pr=calc_soccer(h,a) if sport=='soccer' else calc_basket(h,a)
-   if pr:result['games'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
+   if pr:games.append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
+  return games,fixtures,True
+ with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+  results=list(pool.map(league_results,LEAGUES[sport]))
+ for league,(games,fixtures,ok) in zip(LEAGUES[sport],results):
+  result['games'].extend(games);result['fixtures'].extend(fixtures)
+  if ok:result['sources'].append('ESPN '+league)
+  else:result['warnings'].append(league+': datos no disponibles')
  # Independent schedules are checked even when ESPN is unavailable.
  independent,srcs,errs=independent_fixtures(sport,now,end)
  result['sources'].extend(srcs)
