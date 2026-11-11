@@ -97,11 +97,13 @@ def predictions(sport):
    pr=calc_soccer(h,a) if sport=='soccer' else calc_basket(h,a)
    if pr:result['games'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
  # Always consult an independent provider when the primary feed yields no fixtures.
- if not result['fixtures']:
+ if len(result['fixtures'])<5:
   secondary,errors=sportsdb(sport,now,end)
   if secondary:result['sources'].append('TheSportsDB')
   result['warnings'].extend('TheSportsDB: '+e for e in errors)
+  existing={(x['home'].casefold(),x['away'].casefold(),x['date'][:10]) for x in result['fixtures']}
   for e in secondary:
+   if (e['home'].casefold(),e['away'].casefold(),e['dt'].date().isoformat()) in existing:continue
    result['fixtures'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':e['league'],'source':'TheSportsDB'})
  primary=[{**g,'predictions':[p for p in g['predictions'] if p['probability']>69]} for g in result['games']]
  primary=[g for g in primary if g['predictions']]
