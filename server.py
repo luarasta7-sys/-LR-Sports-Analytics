@@ -31,7 +31,7 @@ def calc_soccer(h,a):
   under=sum(v for i,j,v in matrix if i+j<=n)
   p[f'Menos de {n}.5 goles']=under;p[f'Más de {n}.5 goles']=1-under
  return picks(p)
-def picks(d):return sorted([{'market':k,'probability':round(v*100,2)} for k,v in d.items() if round(v*100,2)>69],key=lambda x:-x['probability'])
+def picks(d):return sorted([{'market':k,'probability':round(v*100,2)} for k,v in d.items() if v*100>69],key=lambda x:-x['probability'])
 def calc_basket(h,a):
  eh=(statistics.mean(x[0] for x in h)+statistics.mean(x[1] for x in a))/2+1.5
  ea=(statistics.mean(x[0] for x in a)+statistics.mean(x[1] for x in h))/2-1.5
@@ -60,7 +60,8 @@ def predictions(sport):
    if min(len(h),len(a))<5:continue
    pr=calc_soccer(h,a) if sport=='soccer' else calc_basket(h,a)
    if pr:result['games'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
- result['games']=sorted(result['games'],key=lambda x:-x['predictions'][0]['probability'])[:10]
+ result['games']=sorted(result['games'],key=lambda x:(-x['predictions'][0]['probability'],x['date']))[:10]
+ if not result['games'] and not result['warnings']:result['note']='No se encontraron partidos con historial suficiente y probabilidades superiores al 69 % en las próximas 48 horas.'
  return result
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
