@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from collections import defaultdict
 from pathlib import Path
 UTC=datetime.timezone.utc
-LEAGUES={'soccer':['eng.1','esp.1','ger.1','ita.1','fra.1','col.1','por.1','ned.1','bra.1','arg.1','mex.1','usa.1','uefa.champions','uefa.europa','uefa.conference'],'basketball':['nba','wnba','mens-college-basketball']}
+LEAGUES={'soccer':['eng.1','esp.1','ger.1','ita.1','fra.1','col.1','por.1','ned.1','bra.1','arg.1','mex.1','usa.1','uefa.champions','uefa.europa','uefa.conference','fifa.world','fifa.friendly','fifa.worldq.uefa','fifa.worldq.conmebol','uefa.nations','concacaf.nations.league','afc.asian.cup'],'basketball':['nba','wnba','mens-college-basketball']}
 def get(url):
  req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; LRSportsAnalytics/1.0)','Accept':'application/json'})
  with urllib.request.urlopen(req,timeout=6) as r:return json.load(r)
@@ -120,13 +120,13 @@ def _compute_predictions(sport):
  def league_results(league):
   path=('soccer/'+league) if sport=='soccer' else ('basketball/'+league if league in ('nba','wnba') else league)
   base='https://site.api.espn.com/apis/site/v2/sports/'+path+'/scoreboard?dates='
-  queries=[('history',n) for n in (1,2,3,5,7,14,30)]+[('future',n) for n in (0,1,2,3)]
+  queries=[('history',n) for n in (1,3,5,7,10,14,21,28,35,42,49,56,63,70)]+[('future',n) for n in (0,1,2,3)]
   def one(q):
    kind,days=q
    day=now+datetime.timedelta(days=days if kind=='future' else -days)
    try:return kind,parse(get(base+day.strftime('%Y%m%d')+'&limit=200'))
    except Exception:return kind,[]
-  with concurrent.futures.ThreadPoolExecutor(max_workers=11) as pool:
+  with concurrent.futures.ThreadPoolExecutor(max_workers=18) as pool:
    fetched=list(pool.map(one,queries))
   history=[e for kind,events in fetched if kind=='history' for e in events]
   future=[e for kind,events in fetched if kind=='future' for e in events]
@@ -140,11 +140,11 @@ def _compute_predictions(sport):
    if not e['scheduled'] or not now<e['dt']<=end:continue
    fixtures.append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league})
    h=team[e['hid']][-10:];a=team[e['aid']][-10:]
-   if min(len(h),len(a))<3:continue
+   if min(len(h),len(a))<2:continue
    pr=calc_soccer(h,a) if sport=='soccer' else calc_basket(h,a)
    if pr:games.append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
   return games,fixtures,True
- with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+ with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
   results=list(pool.map(league_results,LEAGUES[sport]))
  for league,(games,fixtures,ok) in zip(LEAGUES[sport],results):
   result['games'].extend(games);result['fixtures'].extend(fixtures)
