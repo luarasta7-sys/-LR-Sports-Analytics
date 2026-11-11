@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from collections import defaultdict
 from pathlib import Path
 UTC=datetime.timezone.utc
-LEAGUES={'soccer':['eng.1','esp.1','ger.1','ita.1','fra.1','col.1'],'basketball':['nba']}
+LEAGUES={'soccer':['eng.1','esp.1','ger.1','ita.1','fra.1','col.1','por.1','ned.1','bra.1','arg.1','mex.1','usa.1','uefa.champions','uefa.europa','uefa.conference'],'basketball':['nba','wnba','mens-college-basketball']}
 def get(url):
  req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; LRSportsAnalytics/1.0)','Accept':'application/json'})
  with urllib.request.urlopen(req,timeout=6) as r:return json.load(r)
@@ -169,7 +169,7 @@ def _compute_predictions(sport):
   result['games']=primary;result['tier']='principal';result['threshold']=69
  else:
   result['tier']='alternativo' if result['games'] else 'none';result['threshold']=50
- result['games']=sorted(result['games'],key=lambda x:x['date'])[:5]
+ result['games']=sorted(result['games'],key=lambda x:(-max(p['probability'] for p in x['predictions']),x['date']))[:5]
  result['fixtures']=sorted({(g['league'],g['id']):g for g in result['fixtures']}.values(),key=lambda g:g['date'])[:5]
  attach_odds(result,sport,now,end)
  if not result['games']:
@@ -177,7 +177,7 @@ def _compute_predictions(sport):
  return result
 
 # Cuotas decimales verificables, opcionales. Requiere THE_ODDS_API_KEY en Render.
-ODDS_SPORTS={'basketball':['basketball_nba'],'soccer':['soccer_epl','soccer_spain_la_liga','soccer_germany_bundesliga','soccer_italy_serie_a','soccer_france_ligue_one']}
+ODDS_SPORTS={'basketball':['basketball_nba','basketball_wnba','basketball_ncaab'],'soccer':['soccer_epl','soccer_spain_la_liga','soccer_germany_bundesliga','soccer_italy_serie_a','soccer_france_ligue_one','soccer_portugal_primeira_liga','soccer_netherlands_eredivisie','soccer_brazil_campeonato','soccer_argentina_primera_division','soccer_mexico_ligamx','soccer_usa_mls','soccer_uefa_champs_league','soccer_uefa_europa_league']}
 def normalized_name(name):
  import unicodedata,re
  name=unicodedata.normalize('NFKD',name).encode('ascii','ignore').decode().casefold()
