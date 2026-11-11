@@ -46,16 +46,21 @@ def predictions(sport):
   path=('soccer/'+league) if sport=='soccer' else 'basketball/nba'
   base='https://site.api.espn.com/apis/site/v2/sports/'+path+'/scoreboard?dates='
   try:
-   history=parse(get(base+(now-datetime.timedelta(days=40)).strftime('%Y%m%d')+'-'+now.strftime('%Y%m%d')+'&limit=500'))
-   future=parse(get(base+now.strftime('%Y%m%d')+'-'+end.strftime('%Y%m%d')+'&limit=200'))
-   if not history:
-    for days in (1,4,8,15,22,29,36):
-     day=now-datetime.timedelta(days=days)
-     history.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')))
-   if not future:
-    for days in (0,1,2):
-     day=now+datetime.timedelta(days=days)
-     future.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')))
+   # ESPN scoreboard accepts single-day YYYYMMDD queries reliably; avoid date ranges returning HTTP 400.
+   history=[];future=[];success=0
+   for days in (1,2,3,4,5,6,7,9,12,15,18,22,26,30,35,40):
+    day=now-datetime.timedelta(days=days)
+    try:
+     history.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')));success+=1
+    except Exception as err:
+     result['warnings'].append(league+' historial '+str(days)+': '+type(err).__name__+' '+str(err)[:70])
+   for days in (0,1,2):
+    day=now+datetime.timedelta(days=days)
+    try:
+     future.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')));success+=1
+    except Exception as err:
+     result['warnings'].append(league+' calendario '+str(days)+': '+type(err).__name__+' '+str(err)[:70])
+   if not success:raise RuntimeError('No respondió ninguna consulta diaria de ESPN')
    result['sources'].append('ESPN '+league)
   except Exception as exc:
    result['warnings'].append(league+': '+type(exc).__name__+' '+str(exc)[:120]);continue
