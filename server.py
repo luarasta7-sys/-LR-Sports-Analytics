@@ -21,6 +21,27 @@ def parse(data):
   status=(e.get('status') or {}).get('type',{}).get('name','')
   out.append(dict(id=e.get('id'),dt=dt,home=h['team'].get('displayName','Local'),away=a['team'].get('displayName','Visitante'),hid=str(h['team'].get('id')),aid=str(a['team'].get('id')),hs=hs,ass=ass,done=status=='STATUS_FINAL',scheduled=status in ('STATUS_SCHEDULED','STATUS_PRE')))
  return out
+# Secondary independent fixture provider. Public demo API may be rate-limited.
+def sportsdb(sport,now,end):
+ kinds={'soccer':'Soccer','basketball':'Basketball','tennis':'Tennis'}
+ future=[];history=[];errors=[]
+ root='https://www.thesportsdb.com/api/v1/json/3/eventsday.php?'
+ for offset in (0,1,2):
+  day=(now+datetime.timedelta(days=offset)).date().isoformat()
+  try:
+   data=get(root+urllib.parse.urlencode({'d':day,'s':kinds[sport]}))
+   for e in data.get('events') or []:
+    if not e.get('strHomeTeam') or not e.get('strAwayTeam'):continue
+    raw=e.get('strTimestamp') or (e.get('dateEvent','')+'T'+(e.get('strTime') or '00:00:00')+'+00:00')
+    try:dt=datetime.datetime.fromisoformat(raw.replace('Z','+00:00'))
+    except (ValueError,TypeError):continue
+    if dt.tzinfo is None:dt=dt.replace(tzinfo=UTC)
+    if not now<dt<=end:continue
+    if e.get('intHomeScore') is not None or e.get('intAwayScore') is not None:continue
+    future.append({'id':'tsdb-'+str(e.get('idEvent')),'dt':dt,'home':e['strHomeTeam'],'away':e['strAwayTeam'],'league':e.get('strLeague') or sport})
+  except Exception as exc:errors.append(str(exc)[:90])
+ return future,errors
+
 def poisson(lam,n):return math.exp(-lam)*lam**n/math.factorial(n)
 def calc_soccer(h,a):
  lh=max(.2,min(4,(statistics.mean(x[0] for x in h)+statistics.mean(x[1] for x in a))/2*1.08))
@@ -41,7 +62,7 @@ def calc_basket(h,a):
 def predictions(sport):
  now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=48)
  result={'games':[],'fixtures':[],'tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
- if sport=='tennis':result['note']='Tenis: sin fuente gratuita de resultados y modelo validado conectados. No se generan probabilidades inventadas.';return result
+
  for league in LEAGUES[sport]:
   path=('soccer/'+league) if sport=='soccer' else 'basketball/nba'
   base='https://site.api.espn.com/apis/site/v2/sports/'+path+'/scoreboard?dates='
@@ -75,6 +96,13 @@ def predictions(sport):
    if min(len(h),len(a))<5:continue
    pr=calc_soccer(h,a) if sport=='soccer' else calc_basket(h,a)
    if pr:result['games'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
+ # Always consult an independent provider when the primary feed yields no fixtures.
+ if not result['fixtures']:
+  secondary,errors=sportsdb(sport,now,end)
+  if secondary:result['sources'].append('TheSportsDB')
+  result['warnings'].extend('TheSportsDB: '+e for e in errors)
+  for e in secondary:
+   result['fixtures'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':e['league'],'source':'TheSportsDB'})
  primary=[{**g,'predictions':[p for p in g['predictions'] if p['probability']>69]} for g in result['games']]
  primary=[g for g in primary if g['predictions']]
  if primary:
@@ -84,7 +112,7 @@ def predictions(sport):
  result['games']=sorted(result['games'],key=lambda x:(-x['predictions'][0]['probability'],x['date']))[:5]
  result['fixtures']=sorted({(g['league'],g['id']):g for g in result['fixtures']}.values(),key=lambda g:g['date'])[:5]
  if not result['games']:
-  result['note']=('No se pudieron consultar las fuentes deportivas: '+ '; '.join(result['warnings'][:3]) if not result['sources'] else 'No hay pronósticos que superen el 50 % con historial suficiente. Se muestran encuentros programados, sin probabilidades estimadas.' if result['fixtures'] else 'No se encontraron encuentros próximos con datos suficientes en las próximas 48 horas.')
+  result['note']=('No se pudieron consultar las fuentes deportivas: '+ '; '.join(result['warnings'][:3]) if not result['sources'] and not result['fixtures'] else 'No hay pronósticos que superen el 50 % con historial suficiente. Se muestran encuentros programados, sin probabilidades estimadas.' if result['fixtures'] else 'No se encontraron encuentros próximos con datos suficientes en las próximas 48 horas.')
  return result
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
