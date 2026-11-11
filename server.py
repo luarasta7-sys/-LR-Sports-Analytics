@@ -114,7 +114,7 @@ def predictions(sport):
   try:
    # ESPN scoreboard accepts single-day YYYYMMDD queries reliably; avoid date ranges returning HTTP 400.
    history=[];future=[];success=0
-   for days in (1,2,3,4,5,6,7,9,12,15,18,22,26,30,35,40):
+   for days in (1,2,3,4,5,6,7,9,12,15,22,30):
     day=now-datetime.timedelta(days=days)
     try:
      history.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')));success+=1
@@ -141,7 +141,12 @@ def predictions(sport):
    if min(len(h),len(a))<5:continue
    pr=calc_soccer(h,a) if sport=='soccer' else calc_basket(h,a)
    if pr:result['games'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
- # Independent schedules are checked even when ESPN is unavailable.\n independent,srcs,errs=independent_fixtures(sport,now,end)\n result['sources'].extend(srcs)\n result['warnings'].extend(errs)\n result['fixtures'].extend(independent)\n # Always consult an independent provider when the primary feed yields no fixtures.
+ # Independent schedules are checked even when ESPN is unavailable.
+ independent,srcs,errs=independent_fixtures(sport,now,end)
+ result['sources'].extend(srcs)
+ result['warnings'].extend(errs)
+ result['fixtures'].extend(independent)
+ # Always consult an independent provider when the primary feed yields no fixtures.
  if True: # Global discovery independent of regional league coverage
   secondary,errors=sportsdb(sport,now,end)
   if secondary:result['sources'].append('TheSportsDB')
