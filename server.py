@@ -42,6 +42,51 @@ def sportsdb(sport,now,end):
   except Exception as exc:errors.append(str(exc)[:90])
  return future,errors
 
+
+# Independent public schedule sources; failures never stop the other sources.
+def independent_fixtures(sport,now,end):
+ out=[];errors=[];sources=[]
+ if sport=='soccer':
+  year=now.year if now.month>=7 else now.year-1
+  for league in ('bl1','bl2'):
+   for season in (year,year-1):
+    url='https://api.openligadb.de/getmatchdata/'+league+'/'+str(season)
+    try:
+     data=get(url)
+     sources.append('OpenLigaDB '+league)
+     for e in data if isinstance(data,list) else []:
+      if e.get('matchIsFinished'):continue
+      raw=e.get('matchDateTimeUTC')
+      if not raw:continue
+      try:dt=datetime.datetime.fromisoformat(raw.replace('Z','+00:00'))
+      except (ValueError,TypeError):continue
+      if dt.tzinfo is None:dt=dt.replace(tzinfo=UTC)
+      if not now<dt<=end:continue
+      h=e.get('team1') or {};a=e.get('team2') or {}
+      if not h.get('teamName') or not a.get('teamName'):continue
+      out.append({'id':'oldb-'+str(e.get('matchID')),'date':dt.isoformat(),'home':h['teamName'],'away':a['teamName'],'league':league,'source':'OpenLigaDB'})
+    except Exception as exc:errors.append('OpenLigaDB '+league+': '+type(exc).__name__)
+ if sport=='basketball':
+  for url in ('https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json',
+              'https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json'):
+   try:
+    data=get(url);sources.append('NBA oficial')
+    games=(data.get('scoreboard') or {}).get('games') or (data.get('leagueSchedule') or {}).get('gameDates') or []
+    if games and isinstance(games[0],dict) and 'games' in games[0]:
+     games=[g for day in games for g in day.get('games',[])]
+    for e in games:
+     raw=e.get('gameTimeUTC') or e.get('gameDateTimeUTC')
+     if not raw:continue
+     try:dt=datetime.datetime.fromisoformat(raw.replace('Z','+00:00'))
+     except (ValueError,TypeError):continue
+     if dt.tzinfo is None:dt=dt.replace(tzinfo=UTC)
+     if not now<dt<=end or e.get('gameStatus',1)!=1:continue
+     h=e.get('homeTeam') or {};a=e.get('awayTeam') or {}
+     hn=h.get('teamName') or h.get('teamTricode');an=a.get('teamName') or a.get('teamTricode')
+     if hn and an:out.append({'id':'nba-'+str(e.get('gameId')),'date':dt.isoformat(),'home':hn,'away':an,'league':'NBA','source':'NBA oficial'})
+   except Exception as exc:errors.append('NBA oficial: '+type(exc).__name__)
+ return out,list(dict.fromkeys(sources)),errors
+
 def poisson(lam,n):return math.exp(-lam)*lam**n/math.factorial(n)
 def calc_soccer(h,a):
  lh=max(.2,min(4,(statistics.mean(x[0] for x in h)+statistics.mean(x[1] for x in a))/2*1.08))
@@ -96,7 +141,7 @@ def predictions(sport):
    if min(len(h),len(a))<5:continue
    pr=calc_soccer(h,a) if sport=='soccer' else calc_basket(h,a)
    if pr:result['games'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
- # Always consult an independent provider when the primary feed yields no fixtures.
+ # Independent schedules are checked even when ESPN is unavailable.\n independent,srcs,errs=independent_fixtures(sport,now,end)\n result['sources'].extend(srcs)\n result['warnings'].extend(errs)\n result['fixtures'].extend(independent)\n # Always consult an independent provider when the primary feed yields no fixtures.
  if len(result['fixtures'])<5:
   secondary,errors=sportsdb(sport,now,end)
   if secondary:result['sources'].append('TheSportsDB')
