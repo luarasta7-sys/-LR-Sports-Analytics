@@ -212,8 +212,58 @@ def tipsaudit_predictions():
  if not result['games']:result['note']='La fuente respondió, pero no hay partidos dentro de las próximas 60 horas que superen el 50 %.'
  return result
 
+# Public TIPERO feed. Date-only entries are labelled as such; no start time is invented.
+def tennis_predictions():
+ now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=60)
+ result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Cuotas publicadas por TIPERO cuando estén disponibles','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':['TIPERO'],'warnings':[],'note':'No hay pronósticos públicos de tenis que cumplan los criterios para las fechas próximas.'}
+ try:
+  feed=get('https://api.tipero.app/api/latest')
+  if not isinstance(feed,dict) or feed.get('ok') is not True:raise ValueError('Respuesta no válida')
+  run=feed.get('run') or {}
+  published=run.get('published_at_utc')
+  if published:
+   pub=datetime.datetime.fromisoformat(published.replace('Z','+00:00'))
+   if pub.tzinfo is None or pub>now+datetime.timedelta(minutes=10) or now-pub>datetime.timedelta(hours=48):
+    result['note']='TIPERO no tiene una publicación reciente verificada; no se muestran selecciones antiguas.'
+    return result
+  else:
+   result['note']='TIPERO no informa cuándo se publicó el pronóstico; se omite por seguridad.'
+   return result
+  for item in feed.get('picks') or []:
+   try:
+    if not isinstance(item,dict) or item.get('source_type')!='public' or item.get('is_locked') not in (0,False,None):continue
+    if str(item.get('tour','')).upper() not in ('ATP','WTA'):continue
+    day=datetime.date.fromisoformat(str(item.get('match_date') or run.get('match_date')))
+    # Source supplies a calendar date, not a kickoff time. Accept only dates
+    # intersecting the 60h window and clearly disclose unknown start time.
+    if not now.date()<=day<=end.date():continue
+    a=str(item.get('player1') or '').strip();b=str(item.get('player2') or '').strip()
+    selected=str(item.get('pick') or '').strip()
+    if not a or not b or selected not in (a,b) or a==b:continue
+    prob=float(item['confidence'])
+    if not math.isfinite(prob) or not 50<prob<=100:continue
+    p={'market':'Ganador: '+selected,'probability':round(prob,2)}
+    try:
+     odds=float(item.get('odds'))
+     if math.isfinite(odds) and 1<odds<1000:
+      p['reference_odds']=round(odds,2)
+    except (TypeError,ValueError):pass
+    result['games'].append({'id':'tipero-'+str(day)+'-'+a+'-'+b,'date':day.isoformat(),'date_only':True,'home':a,'away':b,'league':str(item['tour']).upper()+' · '+str(item.get('tournament') or 'Tenis'),'predictions':[p],'sample':'TIPERO','analysis':['Confianza publicada por TIPERO; no es una probabilidad calibrada por LR.','Hora de inicio no informada por la fuente; fecha sujeta a programación.'],'free_sources':[{'name':'TIPERO','url':'https://tipero.app/picks/today'}]})
+   except (ValueError,TypeError,KeyError):continue
+ except Exception as exc:
+  result['warnings'].append('TIPERO: '+type(exc).__name__)
+  result['note']='No se pudo verificar el feed de tenis: '+type(exc).__name__+'. No se muestran pronósticos inventados.'
+  return result
+ result['games'].sort(key=lambda g:(-g['predictions'][0]['probability'],g['date']))
+ primary=[g for g in result['games'] if g['predictions'][0]['probability']>69]
+ result['games']=(primary if primary else result['games'])[:5]
+ result['tier']='principal' if primary else ('alternativo' if result['games'] else 'none')
+ result['threshold']=69 if primary else 50
+ return result
+
 def predictions(sport):
  if sport=='soccer':return tipsaudit_predictions()
+ if sport=='tennis':return tennis_predictions()
  cached=_PREDICTION_CACHE.get(sport)
  if cached and (datetime.datetime.now(UTC)-cached[0]).total_seconds()<45:return cached[1]
  result=_compute_predictions(sport)
@@ -361,10 +411,10 @@ def attach_odds(result,sport,now,end):
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   path=urllib.parse.urlparse(self.path)
-  if path.path=='/health':return self.send_json(200,{'ok':True,'sports':list(LEAGUES)})
+  if path.path=='/health':return self.send_json(200,{'ok':True,'sports':list(LEAGUES)+['tennis']})
   if path.path=='/api/predictions':
    sport=urllib.parse.parse_qs(path.query).get('sport',[''])[0]
-   if sport not in LEAGUES:return self.send_json(400,{'error':'Deporte no válido'})
+   if sport not in (*LEAGUES,'tennis'):return self.send_json(400,{'error':'Deporte no válido'})
    try:return self.send_json(200,predictions(sport))
    except Exception as exc:return self.send_json(502,{'error':'Consulta no disponible','detail':type(exc).__name__})
   if path.path in ('/','/index.html'):
