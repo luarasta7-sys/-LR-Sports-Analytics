@@ -169,7 +169,18 @@ def _compute_predictions(sport):
   result['games']=primary;result['tier']='principal';result['threshold']=69
  else:
   result['tier']='alternativo' if result['games'] else 'none';result['threshold']=50
- result['games']=sorted(result['games'],key=lambda x:(-max(p['probability'] for p in x['predictions']),x['date']))[:5]
+ # Diversify global recommendations: one per league on first pass, then fill by score.
+ ranked=sorted(result['games'],key=lambda x:(-max(p['probability'] for p in x['predictions']),x['date']))
+ chosen=[];seen_leagues=set()
+ for g in ranked:
+  if g['league'] not in seen_leagues:
+   chosen.append(g);seen_leagues.add(g['league'])
+  if len(chosen)==5:break
+ if len(chosen)<5:
+  for g in ranked:
+   if g not in chosen:chosen.append(g)
+   if len(chosen)==5:break
+ result['games']=sorted(chosen,key=lambda x:(-max(p['probability'] for p in x['predictions']),x['date']))
  result['fixtures']=sorted({(g['league'],g['id']):g for g in result['fixtures']}.values(),key=lambda g:g['date'])[:5]
  attach_odds(result,sport,now,end)
  if not result['games']:
