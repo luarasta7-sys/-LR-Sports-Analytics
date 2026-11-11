@@ -167,7 +167,7 @@ def calc_basket(h,a):
 _PREDICTION_CACHE={}
 def tipsaudit_predictions():
  now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=60)
- result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Cuotas reales únicamente cuando el proveedor informa una casa y precio vigente','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':['TipsAudit'],'warnings':[],'note':'Probabilidades de mercado ajustadas por margen; no son garantía de resultado.'}
+ result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Cuota justa de referencia disponible cuando TipsAudit la publica; cuota de casa solo si hay precio identificado','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':['TipsAudit'],'warnings':[],'note':'Probabilidades de mercado ajustadas por margen; no son garantía de resultado.'}
  try:
   req=urllib.request.Request('https://tipsaudit.com/api/v1/predictions',headers={'User-Agent':'LR-Sports-Analytics/1.0','Accept':'application/json'})
   with urllib.request.urlopen(req,timeout=16) as response:feed=json.load(response)
@@ -184,12 +184,21 @@ def tipsaudit_predictions():
     if not 50<pct<=100:continue
     market={'home':'1','draw':'X','away':'2'}[key]
     prediction={'market':market,'probability':pct}
+    # TipsAudit publishes fair decimal odds for all three 1X2 outcomes.
+    # These are reference prices WITHOUT bookmaker margin, not executable sportsbook quotes.
+    fair=item.get('fair_odds') or {}
+    try:
+     fair_price=float(fair.get(key))
+     if math.isfinite(fair_price) and 1.0<fair_price<1000:
+      prediction['fair_odds']=round(fair_price,2)
+      prediction['fair_odds_source']='TipsAudit · cuota justa sin margen (no apostable)'
+    except (TypeError,ValueError):pass
     val=item.get('value') or {}
     if val.get('selection')==market and val.get('best_soft_odds') and val.get('bookmaker') and item.get('status')=='actionable':
      prediction['average_odds']=float(val['best_soft_odds'])
      prediction['odds_source']=str(val['bookmaker'])+' (TipsAudit)'
     source=item.get('url') or 'https://tipsaudit.com'
-    result['games'].append({'id':str(item.get('id','')),'date':dt.isoformat(),'home':str(item['home']),'away':str(item['away']),'league':str(item.get('league','Fútbol internacional')),'predictions':[prediction],'sample':'Mercado (margen eliminado)','analysis':['Probabilidades de mercado 1/X/2: '+ ' / '.join(str(round(float(probs.get(k,0))*100,1))+' %' for k in ('home','draw','away'))+'.','Estado de oportunidad: '+str(item.get('status','sin datos'))+'. Cuota solo si hay precio actual identificado.'],'free_sources':[{'name':'TipsAudit','url':source}]})
+    result['games'].append({'id':str(item.get('id','')),'date':dt.isoformat(),'home':str(item['home']),'away':str(item['away']),'league':str(item.get('league','Fútbol internacional')),'predictions':[prediction],'sample':'Mercado (margen eliminado)','analysis':['Probabilidades de mercado 1/X/2: '+ ' / '.join(str(round(float(probs.get(k,0))*100,1))+' %' for k in ('home','draw','away'))+'.','Estado de oportunidad: '+str(item.get('status','sin datos'))+'. Cuota justa de referencia separada de la cuota ofrecida por una casa.'],'free_sources':[{'name':'TipsAudit','url':source}]})
    except (ValueError,TypeError,KeyError):continue
  except Exception as exc:
   result['warnings'].append('TipsAudit: '+type(exc).__name__+' '+str(exc)[:90])
