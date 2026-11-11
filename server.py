@@ -169,7 +169,7 @@ def _compute_predictions(sport):
   result['games']=primary;result['tier']='principal';result['threshold']=69
  else:
   result['tier']='alternativo' if result['games'] else 'none';result['threshold']=50
- result['games']=sorted(result['games'],key=lambda x:(-x['predictions'][0]['probability'],x['date']))[:5]
+ result['games']=sorted(result['games'],key=lambda x:x['date'])[:5]
  result['fixtures']=sorted({(g['league'],g['id']):g for g in result['fixtures']}.values(),key=lambda g:g['date'])[:5]
  attach_odds(result,sport,now,end)
  if not result['games']:
