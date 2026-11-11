@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: lr-sports-analytics
+    runtime: python
+    plan: free
+    buildCommand: "echo No dependencies"
+    startCommand: "python server.py"
+    healthCheckPath: /health
