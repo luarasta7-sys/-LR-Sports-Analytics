@@ -183,7 +183,7 @@ def normalized_name(name):
  name=unicodedata.normalize('NFKD',name).encode('ascii','ignore').decode().casefold()
  return ' '.join(re.findall(r'[a-z0-9]+',name))
 # Only verified prices from the three user-selected bookmakers are eligible.
-BOOKMAKER_ALIASES={'betplay':'BetPlay','wplay':'Wplay','betano':'Betano'}
+BOOKMAKER_ALIASES={'betplay':'BetPlay'}
 def selected_bookmaker(book):
  key=normalized_name(str(book.get('key','')))
  title=normalized_name(str(book.get('title','')))
@@ -193,9 +193,9 @@ def selected_bookmaker(book):
 
 def attach_odds(result,sport,now,end):
  key=os.environ.get('THE_ODDS_API_KEY','').strip()
- result['odds_status']='Sin cuotas verificadas de BetPlay, Wplay o Betano'
+ result['odds_status']='Sin cuotas verificadas de BetPlay'
  if not key:
-  result['odds_status']='Sin proveedor autorizado conectado para consultar BetPlay, Wplay y Betano'
+  result['odds_status']='BetPlay: proveedor de cotizaciones no configurado'
   return
  matched=0
  for league in ODDS_SPORTS[sport]:
@@ -224,15 +224,15 @@ def attach_odds(result,sport,now,end):
           price=outcome.get('price')
           if isinstance(price,(int,float)) and 1<float(price)<1000:quotes[bookmaker]=float(price)
       if quotes:
-       pick['average_odds']=round(statistics.mean(quotes.values()),2)
+       pick['average_odds']=round(quotes['BetPlay'],2)
        pick['bookmakers_count']=len(quotes)
        pick['odds_by_bookmaker']=quotes
-       pick['odds_source']='BetPlay / Wplay / Betano (cotizaciones disponibles)'
+       pick['odds_source']='BetPlay'
        pick['odds_checked_at']=now.isoformat()
        matched+=1
   except Exception as exc:
    result['warnings'].append('Cuotas '+league+': '+type(exc).__name__)
- if matched:result['odds_status']='Cuotas de casas seleccionadas verificadas en '+str(matched)+' selecciones'
+ if matched:result['odds_status']='Cuotas BetPlay verificadas en '+str(matched)+' selecciones'
 
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
