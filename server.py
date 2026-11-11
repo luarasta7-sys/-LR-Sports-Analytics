@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from collections import defaultdict
 from pathlib import Path
 UTC=datetime.timezone.utc
-LEAGUES={'soccer':['eng.1','esp.1','ger.1','ita.1','fra.1','col.1'],'basketball':['nba'],'tennis':[]}
+LEAGUES={'soccer':['eng.1','esp.1','ger.1','ita.1','fra.1','col.1'],'basketball':['nba']}
 def get(url):
  req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; LRSportsAnalytics/1.0)','Accept':'application/json'})
  with urllib.request.urlopen(req,timeout=18) as r:return json.load(r)
@@ -23,7 +23,7 @@ def parse(data):
  return out
 # Secondary independent fixture provider. Public demo API may be rate-limited.
 def sportsdb(sport,now,end):
- kinds={'soccer':'Soccer','basketball':'Basketball','tennis':'Tennis'}
+ kinds={'soccer':'Soccer','basketball':'Basketball'}
  future=[];history=[];errors=[]
  root='https://www.thesportsdb.com/api/v1/json/3/eventsday.php?'
  for offset in (0,1,2):
