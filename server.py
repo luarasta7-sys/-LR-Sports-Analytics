@@ -26,7 +26,7 @@ def sportsdb(sport,now,end):
  kinds={'soccer':'Soccer','basketball':'Basketball'}
  future=[];history=[];errors=[]
  root='https://www.thesportsdb.com/api/v1/json/3/eventsday.php?'
- for offset in (0,1,2):
+ for offset in (0,1,2,3):
   day=(now+datetime.timedelta(days=offset)).date().isoformat()
   try:
    data=get(root+urllib.parse.urlencode({'d':day,'s':kinds[sport]}))
@@ -105,7 +105,7 @@ def calc_basket(h,a):
  ph=(1+math.erf((eh-ea)/(sd*math.sqrt(2))))/2
  return picks({'Ganador local':ph,'Ganador visitante':1-ph},50)
 def predictions(sport):
- now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=48)
+ now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=72)
  result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Sin proveedor de cuotas verificado','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
 
  for league in LEAGUES[sport]:
@@ -120,7 +120,7 @@ def predictions(sport):
      history.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')));success+=1
     except Exception as err:
      result['warnings'].append(league+' historial '+str(days)+': '+type(err).__name__+' '+str(err)[:70])
-   for days in (0,1,2):
+   for days in (0,1,2,3):
     day=now+datetime.timedelta(days=days)
     try:
      future.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')));success+=1
