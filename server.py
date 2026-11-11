@@ -106,7 +106,7 @@ def calc_basket(h,a):
  return picks({'Ganador local':ph,'Ganador visitante':1-ph},50)
 def predictions(sport):
  now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=48)
- result={'games':[],'fixtures':[],'tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
+ result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Sin proveedor de cuotas verificado','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
 
  for league in LEAGUES[sport]:
   path=('soccer/'+league) if sport=='soccer' else 'basketball/nba'
@@ -142,7 +142,7 @@ def predictions(sport):
    pr=calc_soccer(h,a) if sport=='soccer' else calc_basket(h,a)
    if pr:result['games'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
  # Independent schedules are checked even when ESPN is unavailable.\n independent,srcs,errs=independent_fixtures(sport,now,end)\n result['sources'].extend(srcs)\n result['warnings'].extend(errs)\n result['fixtures'].extend(independent)\n # Always consult an independent provider when the primary feed yields no fixtures.
- if len(result['fixtures'])<5:
+ if True: # Global discovery independent of regional league coverage
   secondary,errors=sportsdb(sport,now,end)
   if secondary:result['sources'].append('TheSportsDB')
   result['warnings'].extend('TheSportsDB: '+e for e in errors)
