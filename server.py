@@ -165,8 +165,46 @@ def calc_basket(h,a):
  ph=(1+math.erf((eh-ea)/(sd*math.sqrt(2))))/2
  return picks({'Ganador local':ph,'Ganador visitante':1-ph},50)
 _PREDICTION_CACHE={}
+def tipsaudit_predictions():
+ now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=60)
+ result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Cuotas reales únicamente cuando el proveedor informa una casa y precio vigente','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':['TipsAudit'],'warnings':[],'note':'Probabilidades de mercado ajustadas por margen; no son garantía de resultado.'}
+ try:
+  req=urllib.request.Request('https://tipsaudit.com/api/v1/predictions',headers={'User-Agent':'LR-Sports-Analytics/1.0','Accept':'application/json'})
+  with urllib.request.urlopen(req,timeout=16) as response:feed=json.load(response)
+  items=feed.get('predictions',[])
+  for item in items:
+   try:
+    dt=datetime.datetime.fromisoformat(item['kickoff_utc'].replace('Z','+00:00'))
+    if not now<dt<=end:continue
+    probs=item.get('fair_probabilities') or {}
+    values=[(k,float(probs[k])) for k in ('home','draw','away') if probs.get(k) is not None]
+    if not values:continue
+    key,p=max(values,key=lambda x:x[1])
+    pct=round(p*100,2)
+    if not 50<pct<=100:continue
+    market={'home':'1','draw':'X','away':'2'}[key]
+    prediction={'market':market,'probability':pct}
+    val=item.get('value') or {}
+    if val.get('selection')==market and val.get('best_soft_odds') and val.get('bookmaker') and item.get('status')=='actionable':
+     prediction['average_odds']=float(val['best_soft_odds'])
+     prediction['odds_source']=str(val['bookmaker'])+' (TipsAudit)'
+    source=item.get('url') or 'https://tipsaudit.com'
+    result['games'].append({'id':str(item.get('id','')),'date':dt.isoformat(),'home':str(item['home']),'away':str(item['away']),'league':str(item.get('league','Fútbol internacional')),'predictions':[prediction],'sample':'Mercado (margen eliminado)','analysis':['Probabilidades de mercado 1/X/2: '+ ' / '.join(str(round(float(probs.get(k,0))*100,1))+' %' for k in ('home','draw','away'))+'.','Estado de oportunidad: '+str(item.get('status','sin datos'))+'. Cuota solo si hay precio actual identificado.'],'free_sources':[{'name':'TipsAudit','url':source}]})
+   except (ValueError,TypeError,KeyError):continue
+ except Exception as exc:
+  result['warnings'].append('TipsAudit: '+type(exc).__name__+' '+str(exc)[:90])
+  result['note']='La fuente gratuita no respondió desde el servidor. '+result['warnings'][0]
+  return result
+ result['games'].sort(key=lambda g:(-g['predictions'][0]['probability'],g['date']))
+ main=[g for g in result['games'] if g['predictions'][0]['probability']>69]
+ result['games']=(main if main else result['games'])[:5]
+ result['tier']='principal' if main else ('alternativo' if result['games'] else 'none')
+ result['threshold']=69 if main else 50
+ if not result['games']:result['note']='La fuente respondió, pero no hay partidos dentro de las próximas 60 horas que superen el 50 %.'
+ return result
+
 def predictions(sport):
- if sport=='soccer':return forebet_predictions()
+ if sport=='soccer':return tipsaudit_predictions()
  cached=_PREDICTION_CACHE.get(sport)
  if cached and (datetime.datetime.now(UTC)-cached[0]).total_seconds()<45:return cached[1]
  result=_compute_predictions(sport)
