@@ -1,4 +1,4 @@
-import os,json,math,datetime,urllib.request,urllib.parse,statistics
+import os,json,math,datetime,urllib.request,urllib.parse,statistics,concurrent.futures
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from collections import defaultdict
 from pathlib import Path
@@ -107,7 +107,7 @@ def calc_basket(h,a):
 _PREDICTION_CACHE={}
 def predictions(sport):
  cached=_PREDICTION_CACHE.get(sport)
- if cached and (datetime.datetime.now(UTC)-cached[0]).total_seconds()<300:return cached[1]
+ if cached and (datetime.datetime.now(UTC)-cached[0]).total_seconds()<45:return cached[1]
  result=_compute_predictions(sport)
  _PREDICTION_CACHE[sport]=(datetime.datetime.now(UTC),result)
  return result
@@ -122,7 +122,7 @@ def _compute_predictions(sport):
   try:
    # ESPN scoreboard accepts single-day YYYYMMDD queries reliably; avoid date ranges returning HTTP 400.
    history=[];future=[];success=0
-   for days in (1,2,3,4,5,7,10,14,21,30):
+   for days in (1,2,3,5,7,14,30):
     day=now-datetime.timedelta(days=days)
     try:
      history.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')));success+=1
