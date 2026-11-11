@@ -87,6 +87,65 @@ def independent_fixtures(sport,now,end):
    except Exception as exc:errors.append('NBA oficial: '+type(exc).__name__)
  return out,list(dict.fromkeys(sources)),errors
 
+# Forebet-only football adapter. No model-derived soccer probabilities.
+def forebet_predictions():
+ import re,html
+ from html.parser import HTMLParser
+ from zoneinfo import ZoneInfo
+ now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=60)
+ result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Cuotas solo cuando Forebet las publique','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':['Forebet'],'warnings':[],'note':'Pronósticos publicados por Forebet, sin estimaciones propias.'}
+ class Rows(HTMLParser):
+  def __init__(self):super().__init__();self.depth=0;self.buf=[];self.rows=[];self.link=None
+  def handle_starttag(self,tag,attrs):
+   a=dict(attrs);cl=a.get('class','')
+   if not self.depth and tag in ('div','tr') and ('rcnt' in cl.split() or 'schema' in cl.split() or 'tr_0' in cl.split()):
+    self.depth=1;self.buf=[];self.link=None;return
+   if self.depth:
+    if tag in ('div','tr'):self.depth+=1
+    if tag=='a' and a.get('href') and not self.link:self.link=urllib.parse.urljoin('https://www.forebet.com',a['href'])
+    if tag in ('br','td','p'):self.buf.append(' ')
+  def handle_endtag(self,tag):
+   if self.depth and tag in ('div','tr'):
+    self.depth-=1
+    if self.depth==0:self.rows.append((' '.join(''.join(self.buf).split()),self.link))
+  def handle_data(self,data):
+   if self.depth:self.buf.append(data+' ')
+ urls=['https://www.forebet.com/en/football-predictions/','https://www.forebet.com/en/football-predictions']
+ rows=[]
+ for url in urls:
+  try:
+   req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36','Accept-Language':'en-US,en;q=0.9'})
+   with urllib.request.urlopen(req,timeout=12) as resp:page=resp.read(3000000).decode('utf-8','replace')
+   parser=Rows();parser.feed(page);rows.extend(parser.rows)
+   if rows:break
+  except Exception as exc:result['warnings'].append('Forebet: '+type(exc).__name__)
+ # Each result requires a match date, two team names and three Forebet percentages.
+ for line,link in rows:
+  m=re.search(r'(.+?)\\s+(\\d{1,2}/\\d{1,2}/\\d{4})\\s+(\\d{1,2}:\\d{2})\\s+(\\d{1,3})\\s+(\\d{1,3})\\s+(\\d{1,3})\\s+([1X2])\\b',line)
+  if not m:continue
+  teams,day,clock,p1,px,p2,pred=m.groups()
+  try:
+   dt=datetime.datetime.strptime(day+' '+clock,'%d/%m/%Y %H:%M').replace(tzinfo=ZoneInfo('Europe/Sofia')).astimezone(UTC)
+   if not now<dt<=end:continue
+   probabilities=[int(p1),int(px),int(p2)]
+   if abs(sum(probabilities)-100)>3:continue
+   prob=dict(zip(('1','X','2'),probabilities))[pred]
+   if prob<=50:continue
+   # Team boundaries must be recoverable from the source; never invent names.
+   parts=re.split(r'\\s{2,}|\\s+vs\\.?\\s+|\\s+-\\s+',teams)
+   if len(parts)<2:continue
+   home,away=parts[-2:]
+   if not home.strip() or not away.strip():continue
+   result['games'].append({'id':'forebet-'+str(len(result['games'])),'date':dt.isoformat(),'home':home.strip(),'away':away.strip(),'league':'Forebet · internacional','predictions':[{'market':pred,'probability':prob}],'sample':'Forebet','analysis':['Probabilidades Forebet 1/X/2: '+str(p1)+' % / '+str(px)+' % / '+str(p2)+' %.'],'free_sources':[{'name':'Forebet','url':link or url}]})
+  except Exception:continue
+ result['games'].sort(key=lambda g:(-g['predictions'][0]['probability'],g['date']))
+ preferred=[g for g in result['games'] if g['predictions'][0]['probability']>69]
+ result['games']=(preferred if preferred else result['games'])[:5]
+ result['tier']='principal' if preferred else ('alternativo' if result['games'] else 'none')
+ result['threshold']=69 if preferred else 50
+ if not result['games']:result['note']='Forebet no entregó partidos futuros que el extractor pueda verificar. No se mostrarán datos inventados.'
+ return result
+
 def poisson(lam,n):return math.exp(-lam)*lam**n/math.factorial(n)
 def calc_soccer(h,a):
  lh=max(.2,min(4,(statistics.mean(x[0] for x in h)+statistics.mean(x[1] for x in a))/2*1.08))
@@ -106,6 +165,7 @@ def calc_basket(h,a):
  return picks({'Ganador local':ph,'Ganador visitante':1-ph},50)
 _PREDICTION_CACHE={}
 def predictions(sport):
+ if sport=='soccer':return forebet_predictions()
  cached=_PREDICTION_CACHE.get(sport)
  if cached and (datetime.datetime.now(UTC)-cached[0]).total_seconds()<45:return cached[1]
  result=_compute_predictions(sport)
