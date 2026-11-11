@@ -163,9 +163,60 @@ def predictions(sport):
   result['tier']='alternativo' if result['games'] else 'none';result['threshold']=50
  result['games']=sorted(result['games'],key=lambda x:(-x['predictions'][0]['probability'],x['date']))[:5]
  result['fixtures']=sorted({(g['league'],g['id']):g for g in result['fixtures']}.values(),key=lambda g:g['date'])[:5]
+ attach_odds(result,sport,now,end)
  if not result['games']:
   result['note']=('No se pudieron consultar las fuentes deportivas: '+ '; '.join(result['warnings'][:3]) if not result['sources'] and not result['fixtures'] else 'No hay pronósticos que superen el 50 % con historial suficiente. Se muestran encuentros programados, sin probabilidades estimadas.' if result['fixtures'] else 'No se encontraron encuentros próximos con datos suficientes en las próximas 48 horas.')
  return result
+
+# Cuotas decimales verificables, opcionales. Requiere THE_ODDS_API_KEY en Render.
+ODDS_SPORTS={'basketball':['basketball_nba'],'soccer':['soccer_epl','soccer_spain_la_liga','soccer_germany_bundesliga','soccer_italy_serie_a','soccer_france_ligue_one']}
+def normalized_name(name):
+ import unicodedata,re
+ name=unicodedata.normalize('NFKD',name).encode('ascii','ignore').decode().casefold()
+ return ' '.join(re.findall(r'[a-z0-9]+',name))
+def attach_odds(result,sport,now,end):
+ key=os.environ.get('THE_ODDS_API_KEY','').strip()
+ if not key:
+  result['odds_status']='No configurado: falta THE_ODDS_API_KEY'
+  return
+ result['odds_status']='No se encontraron cuotas verificables para los partidos mostrados'
+ matched=0
+ for league in ODDS_SPORTS[sport]:
+  url='https://api.the-odds-api.com/v4/sports/'+league+'/odds/?'+urllib.parse.urlencode({'apiKey':key,'regions':'eu,uk,us','markets':'h2h','oddsFormat':'decimal'})
+  try:
+   events=get(url)
+   if not isinstance(events,list):continue
+   for game in result['games']:
+    if game.get('odds'):continue
+    for event in events:
+     try:dt=datetime.datetime.fromisoformat(event['commence_time'].replace('Z','+00:00'))
+     except (KeyError,ValueError,TypeError):continue
+     if not now<dt<=end or abs((dt-datetime.datetime.fromisoformat(game['date'])).total_seconds())>7200:continue
+     home=normalized_name(game['home']);away=normalized_name(game['away'])
+     eh=normalized_name(event.get('home_team',''));ea=normalized_name(event.get('away_team',''))
+     if not (home==eh and away==ea):continue
+     for pick in game['predictions']:
+      market=pick['market']
+      if market not in ('Ganador local','Ganador visitante','1','X','2'):continue
+      target=event.get('home_team') if market in ('Ganador local','1') else event.get('away_team') if market in ('Ganador visitante','2') else 'Draw'
+      quotes=[]
+      for book in event.get('bookmakers',[]):
+       for m in book.get('markets',[]):
+        if m.get('key')!='h2h':continue
+        for outcome in m.get('outcomes',[]):
+         if normalized_name(outcome.get('name',''))==normalized_name(target):
+          price=outcome.get('price')
+          if isinstance(price,(int,float)) and 1<price<1000:quotes.append(float(price))
+      if quotes:
+       pick['average_odds']=round(statistics.mean(quotes),2)
+       pick['bookmakers_count']=len(quotes)
+       pick['odds_source']='The Odds API'
+       pick['odds_checked_at']=now.isoformat()
+       matched+=1
+  except Exception as exc:
+   result['warnings'].append('Cuotas '+league+': '+type(exc).__name__)
+ if matched:result['odds_status']='Cuotas verificadas en '+str(matched)+' selecciones (The Odds API)'
+
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   path=urllib.parse.urlparse(self.path)
