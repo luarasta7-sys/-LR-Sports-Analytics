@@ -30,17 +30,17 @@ def calc_soccer(h,a):
  for n in range(6):
   under=sum(v for i,j,v in matrix if i+j<=n)
   p[f'Menos de {n}.5 goles']=under;p[f'Más de {n}.5 goles']=1-under
- return picks(p)
-def picks(d):return sorted([{'market':k,'probability':round(v*100,2)} for k,v in d.items() if v*100>69],key=lambda x:-x['probability'])
+ return picks(p,50)
+def picks(d,threshold=50):return sorted([{'market':k,'probability':round(v*100,2)} for k,v in d.items() if math.isfinite(v) and v*100>threshold],key=lambda x:-x['probability'])
 def calc_basket(h,a):
  eh=(statistics.mean(x[0] for x in h)+statistics.mean(x[1] for x in a))/2+1.5
  ea=(statistics.mean(x[0] for x in a)+statistics.mean(x[1] for x in h))/2-1.5
  sd=max(13,statistics.stdev([x[0]-x[1] for x in h+a]))
  ph=(1+math.erf((eh-ea)/(sd*math.sqrt(2))))/2
- return picks({'Ganador local':ph,'Ganador visitante':1-ph})
+ return picks({'Ganador local':ph,'Ganador visitante':1-ph},50)
 def predictions(sport):
  now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=48)
- result={'games':[],'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
+ result={'games':[],'tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
  if sport=='tennis':result['note']='Tenis: sin fuente gratuita de resultados y modelo validado conectados. No se generan probabilidades inventadas.';return result
  for league in LEAGUES[sport]:
   path=('soccer/'+league) if sport=='soccer' else 'basketball/nba'
@@ -60,8 +60,14 @@ def predictions(sport):
    if min(len(h),len(a))<5:continue
    pr=calc_soccer(h,a) if sport=='soccer' else calc_basket(h,a)
    if pr:result['games'].append({'id':e['id'],'date':e['dt'].isoformat(),'home':e['home'],'away':e['away'],'league':league,'predictions':pr,'sample':min(len(h),len(a))})
+ primary=[{**g,'predictions':[p for p in g['predictions'] if p['probability']>69]} for g in result['games']]
+ primary=[g for g in primary if g['predictions']]
+ if primary:
+  result['games']=primary;result['tier']='principal';result['threshold']=69
+ else:
+  result['tier']='alternativo' if result['games'] else 'none';result['threshold']=50
  result['games']=sorted(result['games'],key=lambda x:(-x['predictions'][0]['probability'],x['date']))[:10]
- if not result['games'] and not result['warnings']:result['note']='No se encontraron partidos con historial suficiente y probabilidades superiores al 69 % en las próximas 48 horas.'
+ if not result['games'] and not result['warnings']:result['note']='No se encontraron partidos con historial suficiente y probabilidades superiores al 50 % en las próximas 48 horas.'
  return result
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
