@@ -6,7 +6,7 @@ UTC=datetime.timezone.utc
 LEAGUES={'soccer':['eng.1','esp.1','ger.1','ita.1','fra.1','col.1'],'basketball':['nba']}
 def get(url):
  req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; LRSportsAnalytics/1.0)','Accept':'application/json'})
- with urllib.request.urlopen(req,timeout=18) as r:return json.load(r)
+ with urllib.request.urlopen(req,timeout=6) as r:return json.load(r)
 def parse(data):
  out=[]
  for e in data.get('events',[]):
@@ -104,7 +104,15 @@ def calc_basket(h,a):
  sd=max(13,statistics.stdev([x[0]-x[1] for x in h+a]))
  ph=(1+math.erf((eh-ea)/(sd*math.sqrt(2))))/2
  return picks({'Ganador local':ph,'Ganador visitante':1-ph},50)
+_PREDICTION_CACHE={}
 def predictions(sport):
+ cached=_PREDICTION_CACHE.get(sport)
+ if cached and (datetime.datetime.now(UTC)-cached[0]).total_seconds()<300:return cached[1]
+ result=_compute_predictions(sport)
+ _PREDICTION_CACHE[sport]=(datetime.datetime.now(UTC),result)
+ return result
+
+def _compute_predictions(sport):
  now=datetime.datetime.now(UTC);end=now+datetime.timedelta(hours=72)
  result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Sin proveedor de cuotas verificado','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
 
@@ -165,7 +173,7 @@ def predictions(sport):
  result['fixtures']=sorted({(g['league'],g['id']):g for g in result['fixtures']}.values(),key=lambda g:g['date'])[:5]
  attach_odds(result,sport,now,end)
  if not result['games']:
-  result['note']=('No se pudieron consultar las fuentes deportivas: '+ '; '.join(result['warnings'][:3]) if not result['sources'] and not result['fixtures'] else 'No hay pronósticos que superen el 50 % con historial suficiente. Se muestran encuentros programados, sin probabilidades estimadas.' if result['fixtures'] else 'No se encontraron encuentros próximos con datos suficientes en las próximas 48 horas.')
+  result['note']=('No se pudieron consultar las fuentes deportivas: '+ '; '.join(result['warnings'][:3]) if not result['sources'] and not result['fixtures'] else 'No hay pronósticos que superen el 50 % con historial suficiente. Se muestran encuentros programados, sin probabilidades estimadas.' if result['fixtures'] else 'No se encontraron encuentros próximos con datos suficientes en las próximas 72 horas.')
  return result
 
 # Cuotas decimales verificables, opcionales. Requiere THE_ODDS_API_KEY en Render.
