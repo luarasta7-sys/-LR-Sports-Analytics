@@ -117,12 +117,12 @@ def _compute_predictions(sport):
  result={'games':[],'fixtures':[],'tipster_annex':[],'odds_status':'Sin proveedor de cuotas verificado','tier':'none','threshold':69,'updated':now.isoformat(),'window_end':end.isoformat(),'sources':[],'warnings':[],'note':'Modelo exploratorio no calibrado; no garantiza aciertos.'}
 
  for league in LEAGUES[sport]:
-  path=('soccer/'+league) if sport=='soccer' else 'basketball/nba'
+  path=('soccer/'+league) if sport=='soccer' else ('basketball/'+league if league in ('nba','wnba') else league)
   base='https://site.api.espn.com/apis/site/v2/sports/'+path+'/scoreboard?dates='
   try:
    # ESPN scoreboard accepts single-day YYYYMMDD queries reliably; avoid date ranges returning HTTP 400.
    history=[];future=[];success=0
-   for days in (1,2,3,4,5,6,7,9,12,15,22,30):
+   for days in (1,2,3,4,5,7,10,14,21,30):
     day=now-datetime.timedelta(days=days)
     try:
      history.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')));success+=1
