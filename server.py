@@ -5,8 +5,8 @@ from pathlib import Path
 UTC=datetime.timezone.utc
 LEAGUES={'soccer':['eng.1','esp.1','ger.1','ita.1','fra.1','col.1'],'basketball':['nba'],'tennis':[]}
 def get(url):
- req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 LR Sports Analytics','Accept':'application/json'})
- with urllib.request.urlopen(req,timeout=12) as r:return json.load(r)
+ req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; LRSportsAnalytics/1.0)','Accept':'application/json'})
+ with urllib.request.urlopen(req,timeout=18) as r:return json.load(r)
 def parse(data):
  out=[]
  for e in data.get('events',[]):
@@ -48,8 +48,17 @@ def predictions(sport):
   try:
    history=parse(get(base+(now-datetime.timedelta(days=40)).strftime('%Y%m%d')+'-'+now.strftime('%Y%m%d')+'&limit=500'))
    future=parse(get(base+now.strftime('%Y%m%d')+'-'+end.strftime('%Y%m%d')+'&limit=200'))
+   if not history:
+    for days in (1,4,8,15,22,29,36):
+     day=now-datetime.timedelta(days=days)
+     history.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')))
+   if not future:
+    for days in (0,1,2):
+     day=now+datetime.timedelta(days=days)
+     future.extend(parse(get(base+day.strftime('%Y%m%d')+'&limit=200')))
    result['sources'].append('ESPN '+league)
-  except Exception as exc:result['warnings'].append(league+': '+type(exc).__name__);continue
+  except Exception as exc:
+   result['warnings'].append(league+': '+type(exc).__name__+' '+str(exc)[:120]);continue
   team=defaultdict(list)
   for e in sorted(history,key=lambda e:e['dt']):
    if not e['done'] or e['hs'] is None or e['dt']>=now:continue
@@ -67,12 +76,13 @@ def predictions(sport):
  else:
   result['tier']='alternativo' if result['games'] else 'none';result['threshold']=50
  result['games']=sorted(result['games'],key=lambda x:(-x['predictions'][0]['probability'],x['date']))[:10]
- if not result['games'] and not result['warnings']:result['note']='No se encontraron partidos con historial suficiente y probabilidades superiores al 50 % en las próximas 48 horas.'
+ if not result['games']:
+  result['note']=('No se pudieron consultar las fuentes deportivas: '+ '; '.join(result['warnings'][:3]) if not result['sources'] else 'No se encontraron partidos con historial suficiente y probabilidades superiores al 50 % en las próximas 48 horas.')
  return result
 class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   path=urllib.parse.urlparse(self.path)
-  if path.path=='/health':return self.send_json(200,{'ok':True})
+  if path.path=='/health':return self.send_json(200,{'ok':True,'sports':list(LEAGUES)})
   if path.path=='/api/predictions':
    sport=urllib.parse.parse_qs(path.query).get('sport',[''])[0]
    if sport not in LEAGUES:return self.send_json(400,{'error':'Deporte no válido'})
